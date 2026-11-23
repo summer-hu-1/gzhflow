@@ -36,6 +36,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: 微信只读权限模拟测试（禁止调用真实 API）
+        run: python -m unittest discover -s tests -v
       - name: Python 语法检查
         run: |
           python -m py_compile scripts/validate_repo.py
@@ -49,6 +51,8 @@ jobs:
           python -m py_compile scripts/image_batch.py
           python -m py_compile scripts/learned_edits.py
           python -m py_compile scripts/publish_draft.py
+          python -m py_compile scripts/wechat_probe.py
+          python -m py_compile tests/test_wechat_probe.py
       - name: 生图预算层冒烟（plan-only 不调接口、不需 key）
         run: |
           cp config/workflow.example.yaml config/workflow.yaml

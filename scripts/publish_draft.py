@@ -10,8 +10,7 @@
 ⚠️ 个人主体公众号 2025-07 起无法 API 直接发布（freepublish 回收），
    本工具只推草稿箱，用户在「公众号助手 App」手动点发布。
 
-凭证读取优先级：命令行参数 → 环境变量 WECHAT_APP_ID/WECHAT_APP_SECRET
-              → config/publish.yaml 的 wechat 字段
+凭证只从环境变量 WECHAT_APP_ID/WECHAT_APP_SECRET 读取
 
 用法:
     python scripts/publish_draft.py <排版.html> --title "标题" \
@@ -39,51 +38,34 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 # ============ 凭证读取 ============
-def load_credentials(args):
-    app_id = args.app_id or os.environ.get("WECHAT_APP_ID")
-    app_secret = args.app_secret or os.environ.get("WECHAT_APP_SECRET")
-
-    if not app_id or not app_secret:
-        # 兜底：config/publish.yaml
-        cfg = ROOT / "config" / "publish.yaml"
-        if cfg.exists():
-            text = cfg.read_text(encoding="utf-8")
-            m_id = re.search(r"app_id\s*[:=]\s*[\"']?([^\"'\s]+)", text)
-            m_sec = re.search(r"app_secret\s*[:=]\s*[\"']?([^\"'\s]+)", text)
-            if m_id:
-                app_id = app_id or m_id.group(1)
-            if m_sec:
-                app_secret = app_secret or m_sec.group(1)
-
-    if not app_id or not app_secret:
-        print("❌ 缺少凭证：请设环境变量 WECHAT_APP_ID/WECHAT_APP_SECRET 或填 config/publish.yaml", file=sys.stderr)
-        sys.exit(2)
-    if "your_" in app_id or "your_" in app_secret or "REDACTED" in app_id:
-        print("❌ 凭证仍是占位符（your_*/REDACTED），请填入真实 AppID/AppSecret", file=sys.stderr)
+def load_credentials(args=None):
+    """Only environment variables are accepted: never pass secrets in CLI or Git."""
+    app_id = os.environ.get("WECHAT_APP_ID", "")
+    app_secret = os.environ.get("WECHAT_APP_SECRET", "")
+    if not app_id or not app_secret or "your_" in app_id or "your_" in app_secret:
+        print("❌ 请配置 WECHAT_APP_ID 和 WECHAT_APP_SECRET 环境变量", file=sys.stderr)
         sys.exit(2)
     return app_id, app_secret
 
 
 # ============ API 调用 ============
 def _die_api_error(e: Exception, context: str) -> None:
-    """urllib 网络/HTTP 错误 → 友好信息 + exit(1)，不吐 traceback。"""
-    if isinstance(e, urllib.error.HTTPError):
-        body = e.read().decode("utf-8", errors="replace")[:300]
-        print(f"❌ 微信 API HTTP {e.code}（{context}）: {body}", file=sys.stderr)
-    else:
-        print(f"❌ 微信 API 网络错误（{context}）: {e.reason}", file=sys.stderr)
+    """Never print request URLs, headers, query parameters or raw responses."""
+    status = f"HTTP {e.code}" if isinstance(e, urllib.error.HTTPError) else "network error"
+    print(f"❌ 微信 API {context}: {status}（敏感响应已隐藏）", file=sys.stderr)
     sys.exit(1)
 
 
 def _die_wechat_error(resp: dict, context: str) -> None:
-    """微信业务错误 → 40164（IP 白名单）给友好提示，其余给原始响应；exit(1)。"""
-    errcode = resp.get("errcode")
-    errmsg = str(resp.get("errmsg", ""))
-    if errcode == 40164 or "invalid ip" in errmsg:
-        print(f"❌ {context}失败: IP 不在白名单（errcode 40164 invalid ip）。"
-              f"请把当前出口 IP 加入「公众号后台 → 设置与开发 → 基本配置 → IP 白名单」", file=sys.stderr)
-    else:
-        print(f"❌ {context}失败: {resp}", file=sys.stderr)
+    """Print only the error code; errmsg can contain sensitive values."""
+    code = resp.get("errcode", "unknown")
+    hint = {
+        40164: "API IP 未列入白名单",
+        48001: "当前接口未授权",
+        40001: "凭证错误或令牌失效",
+        45009: "接口请求次数超限",
+    }.get(code, "检查接口权限和微信后台")
+    print(f"❌ {context}失败: errcode={code}；{hint}", file=sys.stderr)
     sys.exit(1)
 
 
@@ -133,12 +115,16 @@ def _content_type(path: Path) -> str:
 
 
 def get_token(app_id: str, app_secret: str) -> str:
-    url = f"{API_BASE}/cgi-bin/token?grant_type=client_credential&appid={app_id}&secret={app_secret}"
-    resp = api_get(url)
-    if "access_token" not in resp:
-        _die_wechat_error(resp, "获取 token")
+    """Stable token API keeps AppSecret out of URLs."""
+    resp = api_post(f"{API_BASE}/cgi-bin/stable_token", {
+        "grant_type": "client_credential",
+        "appid": app_id,
+        "secret": app_secret,
+        "force_refresh": False,
+    })
+    if resp.get("errcode") not in (None, 0, "0") or not resp.get("access_token"):
+        _die_wechat_error(resp, "获取稳定 token")
     return resp["access_token"]
-
 
 # ============ 上传图片 ============
 def upload_image(token: str, img_path: Path) -> str:
@@ -207,8 +193,7 @@ def main():
     ap.add_argument("--summary", help="摘要（默认截取正文前 120 字）")
     ap.add_argument("--cover", help="封面图路径（2.35:1 ≈ 900x383；缺省读 frontmatter 的 coverImage）")
     ap.add_argument("--no-cover", action="store_true", help="已废弃：draft/add 强制要求封面 thumb_media_id，无封面必报 40007")
-    ap.add_argument("--app-id", help="AppID（覆盖环境变量）")
-    ap.add_argument("--app-secret", help="AppSecret（覆盖环境变量）")
+    ap.add_argument("--confirm-create-draft", action="store_true", help="明确授权本次写入草稿箱")
     ap.add_argument("--dry-run", action="store_true", help="验证全链路但不推送（取 token 前返回）")
     args = ap.parse_args()
 
@@ -276,6 +261,10 @@ def main():
         print(f"   cover: {cover}")
         sys.exit(0)
 
+    if not args.confirm_create_draft:
+        print("❌ 未提供 --confirm-create-draft：未调用微信 API", file=sys.stderr)
+        sys.exit(2)
+
     app_id, app_secret = load_credentials(args)
     token = get_token(app_id, app_secret)
     print("✅ 已获取 access_token")
@@ -307,6 +296,8 @@ def main():
     if cover_media_id:
         article["thumb_media_id"] = cover_media_id
     resp = api_post(f"{API_BASE}/cgi-bin/draft/add?access_token={token}", {"articles": [article]})
+    if resp.get("errcode") not in (0, "0", None):
+        _die_wechat_error(resp, "创建草稿")
     if "media_id" in resp:
         print(f"✅ 已推送到草稿箱: {resp['media_id']}")
         print("   请在「公众号助手 App → 草稿箱」检查后手动发布（个人号无法 API 直接发布）")
