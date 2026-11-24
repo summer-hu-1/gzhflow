@@ -1,0 +1,26 @@
+# 智酱编辑风：从“智酱玩创客”历史文章提炼。
+# 灰阶正文、大留白、宽字距、章节数字，红色仅作关键判断点睛。
+name: "zhijiang-editorial"
+description: "智酱编辑风：14px 灰阶正文、2px 字距、无首行缩进、章节数字与克制红色强调"
+
+colors:
+  bg: "#ffffff"
+  text: "#585858"
+  accent: "#585858"
+  quote_bg: "#f7f7f7"
+  underline: "#fa5359"
+
+fonts:
+  body: "'PingFang SC', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'Microsoft YaHei', Arial, sans-serif"
+  heading: "'PingFang SC', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'Microsoft YaHei', Arial, sans-serif"
+
+layout:
+  body_size: "14px"
+  line_height: "2"
+  paragraph_margin: "0 0 1.45em"
+  side_margin: "16px"
+  letter_spacing: "2px"
+  heading_letter_spacing: "2px"
+  text_indent: "0"
+
+underline_css: "border-bottom:2px solid #fa5359;font-weight:700;"

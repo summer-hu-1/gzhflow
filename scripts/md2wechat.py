@@ -205,9 +205,13 @@ def convert(md_text: str, theme: dict, enhance: bool = False,
     body_style = (
         f'font-family:{f["body"]};font-size:{l["body_size"]};'
         f'color:{c["text"]};line-height:{l["line_height"]};'
+        f'letter-spacing:{l.get("letter_spacing", "normal")};'
         f'margin:0;padding:0 {l["side_margin"]};'
     )
-    p_style = f'margin:{l["paragraph_margin"]};text-align:justify;text-indent:2em;'
+    p_style = (
+        f'margin:{l["paragraph_margin"]};text-align:justify;'
+        f'text-indent:{l.get("text_indent", "2em")};'
+    )
 
     # 通用容器样式（微信编辑器骨架）
     container_style = (
@@ -259,7 +263,8 @@ def convert(md_text: str, theme: dict, enhance: bool = False,
                                 'font-size:0.9em;margin-right:8px;">%s</span>' % (c["accent"], num))
                 blocks.append(
                     f'<section><h{level} style="font-family:{f["heading"]};font-size:{size};'
-                    f'color:{c["text"]};font-weight:bold;margin:1.2em 0 0.6em;line-height:1.4;">'
+                    f'color:{c["text"]};font-weight:bold;margin:1.2em 0 0.6em;line-height:1.4;'
+                    f'letter-spacing:{l.get("heading_letter_spacing", l.get("letter_spacing", "normal"))};">'
                     f'{num_html}{to_leaf(il(title))}</h{level}></section>'
                 )
                 continue
